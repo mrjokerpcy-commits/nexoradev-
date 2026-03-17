@@ -47,20 +47,9 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // Helmet — sets secure HTTP headers
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc:   ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc:    ["'self'", "https://fonts.gstatic.com"],
-      scriptSrc:  ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      imgSrc:     ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'", "*"],
-    }
-  },
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
   hsts: false,
-  noSniff: true,
-  frameguard: { action: 'deny' },
-  xssFilter: true,
 }));
 
 // CORS — only allow your frontend
