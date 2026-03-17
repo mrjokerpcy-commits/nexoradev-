@@ -667,6 +667,72 @@ app.post('/api/tickets/:leadId/reply',
   }
 );
 
+// ── CHAT ROUTES ──
+const chatRouter = express.Router();
+chatRouter.use(requireAuth);
+
+chatRouter.get('/unread', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) as count FROM chat_messages WHERE recipient_id=$1 AND read=false`,
+      [req.user.id]
+    );
+    res.json({ count: parseInt(rows[0].count) });
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
+chatRouter.get('/:targetId', async (req, res) => {
+  try {
+    const tid = req.params.targetId;
+    const isOwner = req.user.role === 'owner';
+    let recipientId;
+    if (isOwner) {
+      const w = await pool.query('SELECT id FROM users WHERE id=$1',[tid]);
+      if (!w.rows.length) return res.status(404).json({ error: 'User not found' });
+      recipientId = tid;
+    } else {
+      const o = await pool.query("SELECT id FROM users WHERE role='owner' LIMIT 1");
+      if (!o.rows.length) return res.json([]);
+      recipientId = o.rows[0].id;
+    }
+    const otherId = isOwner ? tid : recipientId;
+    const { rows } = await pool.query(
+      `SELECT m.*, u.name as sender_name, u.role as sender_role 
+       FROM chat_messages m JOIN users u ON m.sender_id=u.id
+       WHERE (m.sender_id=$1 AND m.recipient_id=$2) OR (m.sender_id=$2 AND m.recipient_id=$1)
+       ORDER BY m.created_at ASC LIMIT 100`,
+      [req.user.id, otherId]
+    );
+    await pool.query('UPDATE chat_messages SET read=true WHERE recipient_id=$1',[req.user.id]);
+    res.json(rows);
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Server error' }); }
+});
+
+chatRouter.post('/:targetId',
+  body('content').trim().isLength({min:1,max:2000}), validate,
+  async (req, res) => {
+    try {
+      const tid = req.params.targetId;
+      const isOwner = req.user.role === 'owner';
+      let recipientId;
+      if (isOwner) {
+        recipientId = tid;
+      } else {
+        const o = await pool.query("SELECT id FROM users WHERE role='owner' LIMIT 1");
+        if (!o.rows.length) return res.status(404).json({ error: 'Owner not found' });
+        recipientId = o.rows[0].id;
+      }
+      const { rows } = await pool.query(
+        `INSERT INTO chat_messages (sender_id, recipient_id, content) VALUES ($1,$2,$3) RETURNING *`,
+        [req.user.id, recipientId, req.body.content]
+      );
+      res.status(201).json(rows[0]);
+    } catch { res.status(500).json({ error: 'Server error' }); }
+  }
+);
+
+app.use('/api/chat', chatRouter);
+
 // ── LEADS ROUTE (public — from portfolio contact form) ──
 app.post('/api/leads',
   body('name').trim().isLength({min:1,max:100}).escape(),
@@ -678,20 +744,21 @@ app.post('/api/leads',
   async (req, res) => {
     const { name, email, service, budget, message } = req.body;
     try {
-      await pool.query(`
+      const { rows } = await pool.query(`
         INSERT INTO leads (name, email, service, budget, message)
-        VALUES ($1,$2,$3,$4,$5)
+        VALUES ($1,$2,$3,$4,$5) RETURNING ticket_id, ticket_code
       `, [name, email, service||null, budget||null, message]);
+      const { ticket_id, ticket_code } = rows[0];
       // Send Telegram notification if configured
       if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
-        const text = `🔔 New Lead!\n\n👤 ${name}\n✉️ ${email}\n⚙️ ${service||'—'}\n💰 ${budget||'—'}\n\n📝 ${message}`;
+        const text = `🔔 New Lead!\n\n👤 ${name}\n✉️ ${email}\n⚙️ ${service||'—'}\n💰 ${budget||'—'}\n🎫 Ticket: ${ticket_id}\n\n📝 ${message}`;
         fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' })
+          body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, text })
         }).catch(()=>{});
       }
-      res.json({ success: true, message: 'Message received! I will reply within 24 hours.' });
+      res.json({ success: true, message: 'Message received! I will reply within 24 hours.', ticket_id, ticket_code });
     } catch(err) {
       console.error('Lead error:', err);
       res.status(500).json({ error: 'Server error' });
@@ -721,6 +788,32 @@ app.patch('/api/leads/:id', requireAuth, requireOwner,
         [req.body.status, req.params.id]
       );
       res.json(rows[0]);
+    } catch { res.status(500).json({ error: 'Server error' }); }
+  }
+);
+
+// ── PUBLIC TICKET LOOKUP (no auth — client uses ticket_id + ticket_code) ──
+app.post('/api/ticket/lookup',
+  body('ticket_id').trim().isLength({min:3,max:30}).escape(),
+  body('ticket_code').trim().isLength({min:3,max:20}).escape(),
+  validate,
+  async (req, res) => {
+    try {
+      const { ticket_id, ticket_code } = req.body;
+      const { rows } = await pool.query(
+        `SELECT id, ticket_id, ticket_code, name, email, service, budget, message, status, created_at
+         FROM leads WHERE UPPER(ticket_id)=UPPER($1) AND UPPER(ticket_code)=UPPER($2)`,
+        [ticket_id, ticket_code]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'Ticket not found. Check your ID and code.' });
+      const lead = rows[0];
+      const { rows: replies } = await pool.query(
+        `SELECT author, content, created_at FROM ticket_replies WHERE lead_id=$1 ORDER BY created_at ASC`,
+        [lead.id]
+      );
+      // Don't expose internal UUID to public
+      const { id, ...safe } = lead;
+      res.json({ ...safe, replies });
     } catch { res.status(500).json({ error: 'Server error' }); }
   }
 );
