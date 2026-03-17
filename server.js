@@ -613,6 +613,64 @@ app.get('/api/stats', requireAuth, requireOwner, async (req, res) => {
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
+// ── LEADS ROUTE (public — from portfolio contact form) ──
+app.post('/api/leads',
+  body('name').trim().isLength({min:1,max:100}).escape(),
+  body('email').trim().isEmail().normalizeEmail(),
+  body('service').optional().trim().isLength({max:100}).escape(),
+  body('budget').optional().trim().isLength({max:50}).escape(),
+  body('message').trim().isLength({min:1,max:2000}).escape(),
+  validate,
+  async (req, res) => {
+    const { name, email, service, budget, message } = req.body;
+    try {
+      await pool.query(`
+        INSERT INTO leads (name, email, service, budget, message)
+        VALUES ($1,$2,$3,$4,$5)
+      `, [name, email, service||null, budget||null, message]);
+      // Send Telegram notification if configured
+      if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+        const text = `🔔 New Lead!\n\n👤 ${name}\n✉️ ${email}\n⚙️ ${service||'—'}\n💰 ${budget||'—'}\n\n📝 ${message}`;
+        fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' })
+        }).catch(()=>{});
+      }
+      res.json({ success: true, message: 'Message received! I will reply within 24 hours.' });
+    } catch(err) {
+      console.error('Lead error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// GET /api/leads — owner only
+app.get('/api/leads', requireAuth, requireOwner, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT * FROM leads ORDER BY created_at DESC
+    `);
+    res.json(rows);
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
+// PATCH /api/leads/:id — mark lead status
+app.patch('/api/leads/:id', requireAuth, requireOwner,
+  param('id').isUUID(),
+  body('status').isIn(['new','contacted','converted','closed']),
+  validate,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        'UPDATE leads SET status=$1 WHERE id=$2 RETURNING *',
+        [req.body.status, req.params.id]
+      );
+      res.json(rows[0]);
+    } catch { res.status(500).json({ error: 'Server error' }); }
+  }
+);
+
 // ── HEALTH CHECK ──
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
