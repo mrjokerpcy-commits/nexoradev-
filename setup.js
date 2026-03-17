@@ -95,6 +95,18 @@ async function setup() {
       );
     `);
 
+    // ── TICKET REPLIES TABLE ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ticket_replies (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+        author VARCHAR(100) NOT NULL DEFAULT 'NexoraDev',
+        content TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_ticket_replies_lead ON ticket_replies(lead_id);`);
+
     // ── LEADS TABLE (from portfolio contact form) ──
     await client.query(`
       CREATE TABLE IF NOT EXISTS leads (
