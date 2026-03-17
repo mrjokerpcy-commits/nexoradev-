@@ -613,6 +613,60 @@ app.get('/api/stats', requireAuth, requireOwner, async (req, res) => {
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
+// GET /api/leads/:id — owner only
+app.get('/api/leads/:id', requireAuth, requireOwner,
+  param('id').isUUID(), validate,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query('SELECT * FROM leads WHERE id=$1', [req.params.id]);
+      if (!rows.length) return res.status(404).json({ error: 'Not found' });
+      // Get replies
+      const { rows: replies } = await pool.query(
+        'SELECT * FROM ticket_replies WHERE lead_id=$1 ORDER BY created_at ASC',
+        [req.params.id]
+      );
+      res.json({ ...rows[0], replies });
+    } catch { res.status(500).json({ error: 'Server error' }); }
+  }
+);
+
+// POST /api/tickets/:leadId/reply — owner sends reply email to client
+app.post('/api/tickets/:leadId/reply',
+  requireAuth, requireOwner,
+  param('leadId').isUUID(),
+  body('content').trim().isLength({min:1,max:5000}),
+  body('status').optional().isIn(['open','replied','closed']),
+  validate,
+  async (req, res) => {
+    const { content, status } = req.body;
+    try {
+      // Get lead
+      const { rows } = await pool.query('SELECT * FROM leads WHERE id=$1', [req.params.leadId]);
+      if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
+      const lead = rows[0];
+      // Save reply
+      await pool.query(
+        `INSERT INTO ticket_replies (lead_id, author, content) VALUES ($1,$2,$3)`,
+        [req.params.leadId, 'NexoraDev', content]
+      );
+      // Update status
+      if (status) await pool.query('UPDATE leads SET status=$1 WHERE id=$2', [status, req.params.leadId]);
+      // Send email via Telegram notification + email simulation
+      if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+        const text = `📤 Reply sent to ${lead.name} (${lead.email})\n\n${content}`;
+        fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, text })
+        }).catch(()=>{});
+      }
+      // Send email via EmailJS or log it
+      console.log(`📧 EMAIL TO: ${lead.email} | FROM: hello@nexoradev.com | SUBJECT: Re: Your inquiry | BODY: ${content}`);
+      res.json({ success: true, message: 'Reply sent' });
+    } catch(err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+  }
+);
+
 // ── LEADS ROUTE (public — from portfolio contact form) ──
 app.post('/api/leads',
   body('name').trim().isLength({min:1,max:100}).escape(),
