@@ -95,6 +95,20 @@ async function setup() {
       );
     `);
 
+    // ── LEADS TABLE (from portfolio contact form) ──
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS leads (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        service VARCHAR(100),
+        budget VARCHAR(50),
+        message TEXT NOT NULL,
+        status VARCHAR(20) DEFAULT 'new' CHECK (status IN ('new','contacted','converted','closed')),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
     // ── AUDIT LOG TABLE ──
     await client.query(`
       CREATE TABLE IF NOT EXISTS audit_log (
