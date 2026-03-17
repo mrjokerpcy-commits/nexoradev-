@@ -277,6 +277,7 @@ input,textarea,select,button{font-family:inherit}
           <div class="nav-item act" onclick="goPage('dashboard')"><span class="nav-icon">📊</span>Dashboard</div>
           <div class="nav-item" onclick="goPage('tasks')"><span class="nav-icon">📋</span>All Tasks<span class="nav-badge" id="nb-tasks">0</span></div>
           <div class="nav-item" onclick="goPage('workers')"><span class="nav-icon">👥</span>Workers<span class="nav-badge" id="nb-workers">0</span></div>
+          <div class="nav-item" onclick="goPage('leads')"><span class="nav-icon">🔥</span>Leads<span class="nav-badge red" id="nb-leads">0</span></div>
         </div>
         <div id="worker-nav" style="display:none">
           <div class="nav-item act" onclick="goPage('my-tasks')"><span class="nav-icon">📋</span>My Tasks<span class="nav-badge" id="nb-my">0</span></div>
@@ -330,6 +331,13 @@ input,textarea,select,button{font-family:inherit}
       <div class="page" id="page-my-done">
         <div class="ph"><div class="ph-left"><h1>Completed</h1><p>Jobs you've finished</p></div></div>
         <div class="task-list" id="my-done-list"></div>
+      </div>
+
+      <div class="page" id="page-leads">
+        <div class="ph">
+          <div class="ph-left"><h1>Leads</h1><p>Incoming client requests from your portfolio site</p></div>
+        </div>
+        <div class="task-list" id="leads-list"></div>
       </div>
     </div>
   </div>
@@ -636,6 +644,7 @@ function goPage(id) {
   if(id==='workers')   renderWorkers();
   if(id==='my-tasks')  renderMyTasks(false);
   if(id==='my-done')   renderMyTasks(true);
+  if(id==='leads')     renderLeads();
 }
 
 function loading(elId) {
@@ -1046,6 +1055,7 @@ function refreshPage() {
   if(id==='workers')   renderWorkers();
   if(id==='my-tasks')  renderMyTasks(false);
   if(id==='my-done')   renderMyTasks(true);
+  if(id==='leads')     renderLeads();
 }
 
 document.addEventListener('keydown',e=>{
@@ -1056,6 +1066,72 @@ document.addEventListener('keydown',e=>{
 setInterval(async ()=>{
   if(refreshToken) await tryRefresh();
 }, 7*60*60*1000);
+
+// ══════════════════════════════════════════
+// LEADS
+// ══════════════════════════════════════════
+async function renderLeads() {
+  loading('leads-list');
+  try {
+    const leads = await api('GET', '/leads');
+    const el = document.getElementById('leads-list');
+    const newLeads = leads.filter(l => l.status === 'new');
+    if(document.getElementById('nb-leads')) document.getElementById('nb-leads').textContent = newLeads.length;
+    if (!leads.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">📭</div><h3>No leads yet</h3><p>When clients fill your contact form they appear here</p></div>`;
+      return;
+    }
+    const statusBadgeL = s => {
+      const map = {new:'b-new',contacted:'b-inprog',converted:'b-done',closed:'b-blocked'};
+      const txt = {new:'🔥 New',contacted:'📞 Contacted',converted:'✅ Converted',closed:'🚫 Closed'};
+      return `<span class="badge ${map[s]||'b-new'}">${txt[s]||s}</span>`;
+    };
+    el.innerHTML = leads.map(l => `
+      <div class="task-card pm">
+        <div class="tc-top">
+          <div class="tc-title">${escHtml(l.name)}</div>
+          <div class="tc-badges">${statusBadgeL(l.status||'new')}</div>
+        </div>
+        <div class="tc-info">
+          <div class="tc-meta">📧 ${escHtml(l.email)}</div>
+          ${l.service?`<div class="tc-meta">⚙️ ${escHtml(l.service)}</div>`:''}
+          ${l.budget?`<div class="tc-meta">💰 ${escHtml(l.budget)}</div>`:''}
+          <div class="tc-meta">📅 ${new Date(l.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+        </div>
+        <div class="detail-box" style="margin-top:12px;font-size:12px">${escHtml(l.message)}</div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-accent btn-sm" onclick="convertLeadToTask('${escHtml(l.id)}','${escHtml(l.name)}','${escHtml(l.email)}','${escHtml(l.service||'')}','${escHtml(l.budget||'')}')">Convert to Task →</button>
+          <button class="btn btn-outline btn-sm" onclick="updateLeadStatus('${escHtml(l.id)}','contacted')">Mark Contacted</button>
+          <button class="btn btn-outline btn-sm" onclick="updateLeadStatus('${escHtml(l.id)}','closed')">Close</button>
+        </div>
+      </div>`).join('');
+  } catch(e) { toast(e.message,'err'); }
+}
+
+async function updateLeadStatus(id, status) {
+  try {
+    await api('PATCH', '/leads/'+id, { status });
+    renderLeads();
+    toast('Lead updated');
+  } catch(e) { toast(e.message,'err'); }
+}
+
+async function convertLeadToTask(id, name, email, service, budget) {
+  try {
+    await api('POST', '/tasks', {
+      title: `Client: ${name}`,
+      client_name: `${name} (${email})`,
+      service_type: service || undefined,
+      budget: budget || undefined,
+      priority: 'high',
+      status: 'new'
+    });
+    await api('PATCH', '/leads/'+id, { status: 'converted' });
+    goPage('tasks');
+    toast('✅ Lead converted to task!');
+  } catch(e) { toast(e.message,'err'); }
+}
+
 </script>
 </body>
 </html>
