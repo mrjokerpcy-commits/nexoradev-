@@ -52,12 +52,12 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       styleSrc:   ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc:    ["'self'", "https://fonts.gstatic.com"],
-      scriptSrc:  ["'self'"],
+      scriptSrc:  ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       imgSrc:     ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", "*"],
     }
   },
-  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  hsts: false,
   noSniff: true,
   frameguard: { action: 'deny' },
   xssFilter: true,
@@ -65,8 +65,8 @@ app.use(helmet({
 
 // CORS — only allow your frontend
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true,
+  origin: '*',
+  credentials: false,
   methods: ['GET','POST','PUT','PATCH','DELETE'],
   allowedHeaders: ['Content-Type','Authorization'],
 }));
