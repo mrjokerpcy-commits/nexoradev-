@@ -277,6 +277,7 @@ input,textarea,select,button{font-family:inherit}
           <div class="nav-item act" onclick="goPage('dashboard')"><span class="nav-icon">📊</span>Dashboard</div>
           <div class="nav-item" onclick="goPage('tasks')"><span class="nav-icon">📋</span>All Tasks<span class="nav-badge" id="nb-tasks">0</span></div>
           <div class="nav-item" onclick="goPage('workers')"><span class="nav-icon">👥</span>Workers<span class="nav-badge" id="nb-workers">0</span></div>
+          <div class="nav-item" onclick="goPage('tickets')"><span class="nav-icon">🎫</span>Tickets<span class="nav-badge red" id="nb-tickets">0</span></div>
           <div class="nav-item" onclick="goPage('leads')"><span class="nav-icon">🔥</span>Leads<span class="nav-badge red" id="nb-leads">0</span></div>
         </div>
         <div id="worker-nav" style="display:none">
@@ -321,7 +322,18 @@ input,textarea,select,button{font-family:inherit}
         <div class="workers-grid" id="workers-grid"></div>
       </div>
 
-      <div class="page" id="page-my-tasks">
+      <div class="page" id="page-tickets">
+        <div class="ph">
+          <div class="ph-left"><h1>Support Tickets</h1><p>Client messages — reply and they get email notifications</p></div>
+        </div>
+        <div class="task-filters">
+          <button class="tf act" onclick="filterTickets(this,'')">All</button>
+          <button class="tf" onclick="filterTickets(this,'open')">Open</button>
+          <button class="tf" onclick="filterTickets(this,'replied')">Replied</button>
+          <button class="tf" onclick="filterTickets(this,'closed')">Closed</button>
+        </div>
+        <div class="task-list" id="tickets-list"></div>
+      </div>
         <div class="ph">
           <div class="ph-left"><h1>My Tasks</h1><p id="worker-greeting">Your assigned jobs</p></div>
         </div>
@@ -360,7 +372,15 @@ input,textarea,select,button{font-family:inherit}
         <div class="detail-field"><div class="df-lbl">Service Type</div><div class="df-val" id="m-service">—</div></div>
         <div class="detail-field"><div class="df-lbl">Deadline</div><div class="df-val" id="m-deadline">—</div></div>
         <div class="detail-field"><div class="df-lbl">Budget</div><div class="df-val" id="m-budget">—</div></div>
-        <div class="detail-field"><div class="df-lbl">Assigned To</div><div class="df-val" id="m-assigned">—</div></div>
+        <div class="detail-field">
+          <div class="df-lbl">Assigned To</div>
+          <div id="m-assigned-owner" style="display:none">
+            <select class="status-sel" id="m-assign-sel" onchange="saveAssign()" style="margin-top:4px">
+              <option value="">Unassigned</option>
+            </select>
+          </div>
+          <div class="df-val" id="m-assigned">—</div>
+        </div>
         <div class="detail-field" id="m-link-field" style="display:none">
           <div class="df-lbl">Reference Link</div>
           <a id="m-link" href="#" target="_blank" rel="noopener noreferrer" style="font-family:'DM Mono',monospace;font-size:13px;color:var(--accent)">Open Link ↗</a>
@@ -465,6 +485,48 @@ input,textarea,select,button{font-family:inherit}
     <div class="wm-footer">
       <button class="btn btn-outline btn-sm" onclick="closeWorker()">Cancel</button>
       <button class="btn btn-accent btn-sm" id="add-worker-btn" onclick="addWorker()">Add Worker →</button>
+    </div>
+  </div>
+</div>
+
+<!-- TICKET MODAL -->
+<div id="ticket-overlay" onclick="closeTicketBg(event)" style="position:fixed;inset:0;z-index:600;background:rgba(0,0,0,.8);display:none;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:16px;width:100%;max-width:640px;margin:auto">
+    <div style="padding:22px 28px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <h2 style="font-size:18px;font-weight:800" id="tk-title">Ticket</h2>
+        <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px" id="tk-meta"></div>
+      </div>
+      <button class="modal-close" onclick="closeTicket()">×</button>
+    </div>
+    <div style="padding:22px 28px">
+      <!-- Original message -->
+      <div class="msec-title">Client Message</div>
+      <div class="detail-box" id="tk-message" style="margin-bottom:20px"></div>
+      <!-- Client info -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
+        <div class="detail-field"><div class="df-lbl">Name</div><div class="df-val" id="tk-name">—</div></div>
+        <div class="detail-field"><div class="df-lbl">Email</div><div class="df-val" id="tk-email" style="font-family:'DM Mono',monospace;font-size:13px">—</div></div>
+        <div class="detail-field"><div class="df-lbl">Service</div><div class="df-val" id="tk-service">—</div></div>
+        <div class="detail-field"><div class="df-lbl">Budget</div><div class="df-val" id="tk-budget">—</div></div>
+      </div>
+      <!-- Reply history -->
+      <div class="msec-title">Reply History</div>
+      <div class="notes-list" id="tk-replies" style="margin-bottom:14px"></div>
+      <!-- Reply form -->
+      <div class="msec-title">Send Reply</div>
+      <textarea class="fta" id="tk-reply-txt" placeholder="Type your reply to the client... They will receive it by email." style="margin-bottom:12px;min-height:120px"></textarea>
+      <div style="display:flex;gap:10px;justify-content:space-between;align-items:center">
+        <select class="fsel" id="tk-status-sel" style="max-width:160px">
+          <option value="open">🟡 Open</option>
+          <option value="replied">💬 Replied</option>
+          <option value="closed">✅ Closed</option>
+        </select>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="closeTicket()">Cancel</button>
+          <button class="btn btn-accent btn-sm" id="tk-send-btn" onclick="sendReply()">Send Reply & Email →</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -644,6 +706,7 @@ function goPage(id) {
   if(id==='workers')   renderWorkers();
   if(id==='my-tasks')  renderMyTasks(false);
   if(id==='my-done')   renderMyTasks(true);
+  if(id==='tickets')   renderTickets();
   if(id==='leads')     renderLeads();
 }
 
@@ -817,6 +880,20 @@ async function openTask(id) {
     document.getElementById('m-deadline').textContent = fmtDate(t.deadline);
     document.getElementById('m-budget').textContent = t.budget || '—';
     document.getElementById('m-assigned').textContent = t.assigned_name || 'Unassigned';
+    // Show reassign dropdown for owner
+    if (currentUser.role === 'owner') {
+      document.getElementById('m-assigned-owner').style.display = 'block';
+      document.getElementById('m-assigned').style.display = 'none';
+      try {
+        const workers = await api('GET', '/users');
+        const sel = document.getElementById('m-assign-sel');
+        sel.innerHTML = '<option value="">Unassigned</option>' + workers.map(w=>`<option value="${escHtml(w.id)}">${escHtml(w.name)}</option>`).join('');
+        sel.value = t.assigned_to || '';
+      } catch {}
+    } else {
+      document.getElementById('m-assigned-owner').style.display = 'none';
+      document.getElementById('m-assigned').style.display = 'block';
+    }
     document.getElementById('m-desc').textContent = t.description || 'No requirements provided.';
     document.getElementById('m-meta').innerHTML = statusBadge(t.status||'new') + priBadge(t.priority||'med');
     if (t.reference_link) {
@@ -842,6 +919,15 @@ function closeModal() {
   document.getElementById('modal-overlay').classList.remove('show');
   currentTaskId = null;
   refreshPage();
+}
+
+async function saveAssign() {
+  if(!currentTaskId) return;
+  const val = document.getElementById('m-assign-sel').value;
+  try {
+    await api('PATCH','/tasks/'+currentTaskId,{assigned_to: val||null});
+    toast('Worker assigned');
+  } catch(e) { toast(e.message,'err'); }
 }
 
 async function saveStatus() {
@@ -1028,6 +1114,98 @@ async function addWorker() {
     toast('👤 Worker added!');
   } catch(e) { toast(e.message,'err'); }
   finally { btn.disabled=false; btn.textContent='Add Worker →'; }
+}
+
+// ══════════════════════════════════════════
+// TICKETS
+// ══════════════════════════════════════════
+let currentTicketId = null;
+let ticketFilter = '';
+
+function filterTickets(btn, f) {
+  document.querySelectorAll('.tf').forEach(b=>b.classList.remove('act'));
+  btn.classList.add('act');
+  ticketFilter = f;
+  renderTickets();
+}
+
+async function renderTickets() {
+  loading('tickets-list');
+  try {
+    const url = ticketFilter ? `/leads?status=${ticketFilter}` : '/leads';
+    const tickets = await api('GET', url);
+    const open = tickets.filter(t=>t.status==='open').length;
+    if(document.getElementById('nb-tickets')) document.getElementById('nb-tickets').textContent = open;
+    const el = document.getElementById('tickets-list');
+    if (!tickets.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">🎫</div><h3>No tickets yet</h3><p>When clients submit your contact form they appear here</p></div>`;
+      return;
+    }
+    const smap = {open:'b-inprog',replied:'b-review',closed:'b-done'};
+    const stxt = {open:'🟡 Open',replied:'💬 Replied',closed:'✅ Closed'};
+    el.innerHTML = tickets.map(t=>`
+      <div class="task-card pm" onclick="openTicket('${escHtml(t.id)}')">
+        <div class="tc-top">
+          <div class="tc-title">${escHtml(t.name)} <span style="font-weight:400;color:var(--muted);font-size:13px">— ${escHtml(t.email)}</span></div>
+          <div class="tc-badges"><span class="badge ${smap[t.status]||'b-new'}">${stxt[t.status]||t.status}</span></div>
+        </div>
+        <div class="tc-info">
+          ${t.service?`<div class="tc-meta">⚙️ ${escHtml(t.service)}</div>`:''}
+          ${t.budget?`<div class="tc-meta">💰 ${escHtml(t.budget)}</div>`:''}
+          <div class="tc-meta">📅 ${new Date(t.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+        </div>
+        <div class="detail-box" style="margin-top:10px;font-size:12px;max-height:60px;overflow:hidden">${escHtml(t.message)}</div>
+      </div>`).join('');
+  } catch(e) { toast(e.message,'err'); }
+}
+
+async function openTicket(id) {
+  currentTicketId = id;
+  document.getElementById('ticket-overlay').style.display = 'flex';
+  try {
+    const t = await api('GET', '/leads/'+id);
+    document.getElementById('tk-title').textContent = `Ticket from ${t.name}`;
+    document.getElementById('tk-meta').textContent = new Date(t.created_at).toLocaleString('en-GB');
+    document.getElementById('tk-message').textContent = t.message;
+    document.getElementById('tk-name').textContent = t.name;
+    document.getElementById('tk-email').textContent = t.email;
+    document.getElementById('tk-service').textContent = t.service||'—';
+    document.getElementById('tk-budget').textContent = t.budget||'—';
+    document.getElementById('tk-status-sel').value = t.status||'open';
+    // Show replies
+    const replies = t.replies||[];
+    const el = document.getElementById('tk-replies');
+    el.innerHTML = replies.length ? replies.map(r=>`
+      <div class="note-item">
+        <div class="note-meta">
+          <span class="note-author">${escHtml(r.author)}</span>
+          <span class="note-time">${r.time}</span>
+        </div>
+        <div class="note-text">${escHtml(r.content)}</div>
+      </div>`).join('') : `<div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted2);padding:6px 0">No replies yet.</div>`;
+    document.getElementById('tk-reply-txt').value = '';
+  } catch(e) { toast(e.message,'err'); }
+}
+
+function closeTicketBg(e) { if(e.target===document.getElementById('ticket-overlay')) closeTicket(); }
+function closeTicket() {
+  document.getElementById('ticket-overlay').style.display = 'none';
+  currentTicketId = null;
+  renderTickets();
+}
+
+async function sendReply() {
+  const content = document.getElementById('tk-reply-txt').value.trim();
+  if (!content) { toast('Write a reply first','err'); return; }
+  const btn = document.getElementById('tk-send-btn');
+  const status = document.getElementById('tk-status-sel').value;
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    await api('POST', '/tickets/'+currentTicketId+'/reply', { content, status });
+    toast('✅ Reply sent — client notified by email');
+    closeTicket();
+  } catch(e) { toast(e.message,'err'); }
+  finally { btn.disabled=false; btn.innerHTML='Send Reply & Email →'; }
 }
 
 // ══════════════════════════════════════════
